@@ -52,9 +52,9 @@ fn main() -> Result<()> {
     }
 
     let output = Output {
-        o_stdin: ChunkPathPairs::new(i_stdin),
-        o_stdout: ChunkPathPairs::new(i_stdout),
-        o_stderr: ChunkPathPairs::new(i_stderr),
+        o_stdin: ChunkPathPairs::new(&i_stdin),
+        o_stdout: ChunkPathPairs::new(&i_stdout),
+        o_stderr: ChunkPathPairs::new(&i_stderr),
     };
 
     let start_tab = if piped {
@@ -65,10 +65,10 @@ fn main() -> Result<()> {
     ratatui::run(|terminal| App::new(output, start_tab).run(terminal))
 }
 
-struct App {
+struct App<'out> {
     should_exit: bool,
     current_tab: TabKind,
-    output: Output,
+    output: Output<'out>,
     // One ListState per tab so each tab keeps its own selection.
     list_states: [ListState; 3],
 }
@@ -104,8 +104,8 @@ impl TabKind {
     }
 }
 
-impl App {
-    fn new(output: Output, start_tab: TabKind) -> Self {
+impl<'out> App<'out> {
+    fn new(output: Output<'out>, start_tab: TabKind) -> Self {
         Self {
             should_exit: false,
             current_tab: start_tab,
@@ -114,7 +114,7 @@ impl App {
         }
     }
 
-    fn current_tab_items(&self) -> &ChunkPathPairs {
+    fn current_tab_items<'a>(&'a self) -> &'a ChunkPathPairs<'out> {
         match self.current_tab {
             TabKind::Stdin => &self.output.o_stdin,
             TabKind::Stdout => &self.output.o_stdout,
@@ -127,7 +127,7 @@ impl App {
     }
 }
 
-impl App {
+impl<'out> App<'out> {
     fn run(mut self, terminal: &mut DefaultTerminal) -> Result<()> {
         while !self.should_exit {
             terminal.draw(|frame| self.render(frame))?;
@@ -158,7 +158,7 @@ impl App {
     }
 }
 
-impl Widget for &mut App {
+impl<'out> Widget for &mut App<'out> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let [tabs_area, list_area, list_extra_area, footer_area] =
             area.layout(&Layout::vertical([
@@ -176,7 +176,7 @@ impl Widget for &mut App {
 }
 
 /// Rendering logic for the app
-impl App {
+impl<'out> App<'out> {
     fn render_tabs(&self, area: Rect, buf: &mut Buffer) {
         Tabs::new(TabKind::ALL.map(|t| t.title()))
             .select(self.current_tab.index())
@@ -242,7 +242,7 @@ impl App {
     }
 }
 
-impl App {
+impl<'out> App<'out> {
     fn edit_file(&mut self) {
         // TODO: open the selected match in $EDITOR
         self.current_state().select_first();
