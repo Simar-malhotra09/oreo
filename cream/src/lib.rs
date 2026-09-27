@@ -7,42 +7,41 @@ use std::sync::LazyLock;
 // this should be one 'chunk' of text
 // say, newline delimited for now.
 #[derive(Default)]
-pub struct Packed {
-    pub chunk: String,
+pub struct Packed<'out> {
+    pub chunk: &'out str,
     pub path_match: PathMatch,
 }
 
 #[derive(Default)]
-pub struct ChunkPathPairs {
-    pub pairs: Vec<Packed>,
+pub struct ChunkPathPairs<'out> {
+    pub pairs: Vec<Packed<'out>>,
 }
 
-impl ChunkPathPairs {
-    pub fn new(content: String) -> Self {
+impl<'out> ChunkPathPairs<'out> {
+    pub fn new(content: &'out str) -> Self {
         let items = content // items expected to be Vec<Packed>
-            .split('\n') // split by line
-            .map(|i| Packed::new(i.to_string())) //inner returns Vec<Packed>, so I have
-            //Vec<Vec<Packed>>
-            .flatten()
-            .collect();
-        Self { pairs: items }
-    }
-    pub fn new_single_chunk(mut content: String) -> Self {
-        let items = ChunkPathPairs::strip_newlines(&mut content)
             .split('\n')
-            .map(|i| Packed::new(i.to_string()))
-            .flatten()
+            .flat_map(|i| Packed::new(i)) //inner returns Vec<Packed>, so I have //Vec<Vec<Packed>>
+            // essentially, i has lifeitme of content, every other ref used should have the same
             .collect();
         Self { pairs: items }
     }
+    // pub fn new_single_chunk(mut content: String) -> Self {
+    //     let items = ChunkPathPairs::strip_newlines(&mut content)
+    //         .split('\n')
+    //         .flat_map(|i| Packed::new(i))
+    //         .collect();
+    //     Self { pairs: items }
+    // }
 
+    #[allow(dead_code)]
     fn strip_newlines(content: &mut String) -> &String {
         *content = content.replace('\n', " ");
         content
     }
 }
 
-impl Display for ChunkPathPairs {
+impl<'out> Display for ChunkPathPairs<'out> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         for Packed { chunk, path_match } in &self.pairs {
             writeln!(f, "chunk: {}", chunk)?;
@@ -54,13 +53,13 @@ impl Display for ChunkPathPairs {
     }
 }
 
-impl Packed {
-    pub fn new(content: String) -> Vec<Self> {
-        let matches = extract_path_matches(&content);
+impl<'out> Packed<'out> {
+    pub fn new(content: &'out str) -> Vec<Self> {
+        let matches = extract_path_matches(content);
         let mut res = Vec::<Packed>::new();
         for path_match in matches {
             res.push(Self {
-                chunk: content.clone(),
+                chunk: content,
                 path_match,
             })
         }
@@ -72,10 +71,10 @@ impl Packed {
 }
 
 #[derive(Default)]
-pub struct Output {
-    pub o_stdin: ChunkPathPairs,
-    pub o_stdout: ChunkPathPairs,
-    pub o_stderr: ChunkPathPairs,
+pub struct Output<'out> {
+    pub o_stdin: ChunkPathPairs<'out>,
+    pub o_stdout: ChunkPathPairs<'out>,
+    pub o_stderr: ChunkPathPairs<'out>,
 }
 
 #[derive(Default, Debug, PartialEq, Eq)]

@@ -1,7 +1,7 @@
 use std::io::{self, IsTerminal, Read};
 use std::process::Command;
 
-use cream::{ChunkPathPairs, Output, Packed};
+use cream::{ChunkPathPairs, Output};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut i_stdin = String::new();
@@ -36,9 +36,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         i_stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     }
     let output = Output {
-        o_stdin: ChunkPathPairs::new(i_stdin),
-        o_stdout: ChunkPathPairs::new(i_stdout),
-        o_stderr: ChunkPathPairs::new(i_stderr),
+        o_stdin: ChunkPathPairs::new(&i_stdin),
+        o_stdout: ChunkPathPairs::new(&i_stdout),
+        o_stderr: ChunkPathPairs::new(&i_stderr),
         // o_stdin: Packed::new_with_strip_newlines(i_stdin),
         // o_stdout: Packed::new_with_strip_newlines(i_stdout),
         // o_stderr: Packed::new_with_strip_newlines(i_stderr),
