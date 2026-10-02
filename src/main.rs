@@ -229,13 +229,13 @@ impl<'out> App<'out> {
             return;
         };
 
-        let info = format_item(&self.current_tab_items().pairs[idx].path_match);
+        let info = &self.current_tab_items().pairs[idx].chunk;
 
         if info.chars().count() <= list_width as usize {
             return;
         }
 
-        Paragraph::new(info)
+        Paragraph::new(*info)
             .block(Block::new().title("Full text "))
             .wrap(Wrap { trim: false })
             .render(area, buf);
@@ -249,13 +249,13 @@ impl<'out> App<'out> {
     }
 }
 fn format_item(value: &PathMatch) -> String {
-    let dash = |n: Option<u32>| n.map_or("-".to_string(), |n| n.to_string());
+    let empty_or_not_here_i_come = |n: Option<u32>| n.map_or(" ".to_string(), |n| format!(": {n}"));
 
     format!(
-        "Path: {}, Line: {}, Col: {}",
+        "{}{}{}",
         value.path,
-        dash(value.line_num),
-        dash(value.col_num),
+        empty_or_not_here_i_come(value.line_num),
+        empty_or_not_here_i_come(value.col_num),
     )
 }
 

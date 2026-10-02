@@ -21,7 +21,7 @@ impl<'out> ChunkPathPairs<'out> {
     pub fn new(content: &'out str) -> Self {
         let items = content // items expected to be Vec<Packed>
             .split('\n')
-            .flat_map(|i| Packed::new(i)) //inner returns Vec<Packed>, so I have //Vec<Vec<Packed>>
+            .flat_map(Packed::new) //inner returns Vec<Packed>, so I have //Vec<Vec<Packed>>
             // essentially, i has lifeitme of content, every other ref used should have the same
             .collect();
         Self { pairs: items }
@@ -143,6 +143,7 @@ pub fn extract_path_matches(input: &str) -> Vec<PathMatch> {
         let m = caps.name("path").unwrap();
         let raw = m.as_str();
         let Some(valid_len) = validate_path(raw) else {
+            println!("{} isn't valid! ", raw);
             continue;
         };
 
