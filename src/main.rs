@@ -209,7 +209,7 @@ impl<'out> App<'out> {
             .iter()
             .enumerate()
             .map(|(idx, packed)| {
-                ListItem::new(format_item(&packed.path_match))
+                ListItem::new(format_item(&packed.path_match, area.width))
                     .fg(SLATE.c200)
                     .bg(alternate_colors(idx))
             })
@@ -248,15 +248,28 @@ impl<'out> App<'out> {
         self.current_state().select_first();
     }
 }
-fn format_item(value: &PathMatch) -> String {
+fn format_item(value: &PathMatch, blk_width: u16) -> String {
+    assert!(blk_width > 0, "blk_width must be greater than zero");
+
     let empty_or_not_here_i_come = |n: Option<u32>| n.map_or(" ".to_string(), |n| format!(": {n}"));
 
-    format!(
-        "{}{}{}",
+    let item_str = format!(
+        "idx: {}{}{}",
         value.path,
         empty_or_not_here_i_come(value.line_num),
         empty_or_not_here_i_come(value.col_num),
-    )
+    );
+
+    let mut formatted = String::with_capacity(item_str.len());
+
+    for (i, ch) in item_str.chars().enumerate() {
+        if i > 0 && i % blk_width as usize == 0 {
+            formatted.push('\n');
+        }
+        formatted.push(ch);
+    }
+
+    formatted
 }
 
 const fn alternate_colors(i: usize) -> Color {
