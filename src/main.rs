@@ -68,6 +68,7 @@ fn main() -> Result<()> {
 struct App<'out> {
     should_exit: bool,
     current_tab: TabKind,
+    tab_info: TabInfo,
     output: Output<'out>,
     // One ListState per tab so each tab keeps its own selection.
     list_states: [ListState; 3],
@@ -78,6 +79,13 @@ enum TabKind {
     Stdin,
     Stdout,
     Stderr,
+}
+
+#[derive(Clone, Copy)]
+struct TabInfo {
+    stdin: (TabKind, u32),
+    stdout: (TabKind, u32),
+    stderr: (TabKind, u32),
 }
 
 impl TabKind {
@@ -106,10 +114,16 @@ impl TabKind {
 
 impl<'out> App<'out> {
     fn new(output: Output<'out>, start_tab: TabKind) -> Self {
+        let tab_info = TabInfo {
+            stdin: (TabKind::Stdin, output.o_stdin.pairs.len() as u32),
+            stdout: (TabKind::Stdout, output.o_stdout.pairs.len() as u32),
+            stderr: (TabKind::Stderr, output.o_stderr.pairs.len() as u32),
+        };
         Self {
             should_exit: false,
             current_tab: start_tab,
             output,
+            tab_info,
             list_states: std::array::from_fn(|_| ListState::default()),
         }
     }
@@ -184,9 +198,16 @@ impl<'out> App<'out> {
             .render(area, buf);
     }
 
-    fn render_footer(&mut self, area: Rect, list_width: u16, buf: &mut Buffer) {
+    fn render_footer(&mut self, area: Rect, _list_width: u16, buf: &mut Buffer) {
+        // the following is pretty ugly beaware future me!
+        let curr_idx = self.current_state().selected().unwrap_or(0) as u32 + 1;
+        let total_idx = match self.current_tab {
+            TabKind::Stdin => self.tab_info.stdin.1,
+            TabKind::Stdout => self.tab_info.stdout.1,
+            TabKind::Stderr => self.tab_info.stderr.1,
+        };
         Paragraph::new(format!(
-            "←/→ switch tab · ↑/↓ move · g/G top/bottom · Enter open · q quit, {list_width}"
+            " On {curr_idx } / {total_idx} | ←/→ switch tab · ↑/↓ move · g/G top/bottom · Enter open · q quit"
         ))
         .centered()
         .render(area, buf);
