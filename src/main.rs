@@ -8,7 +8,7 @@ use ratatui::symbols;
 use ratatui::text::Line;
 use ratatui::widgets::{
     Block, Borders, HighlightSpacing, List, ListItem, ListState, Paragraph, StatefulWidget, Tabs,
-    Widget, Wrap,
+    Widget,
 };
 use ratatui::{DefaultTerminal, Frame};
 use std::io::{self, IsTerminal, Read};
@@ -160,17 +160,15 @@ impl<'out> App<'out> {
 
 impl<'out> Widget for &mut App<'out> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let [tabs_area, list_area, list_extra_area, footer_area] =
-            area.layout(&Layout::vertical([
-                Constraint::Length(1),
-                Constraint::Fill(3),
-                Constraint::Fill(1),
-                Constraint::Length(1),
-            ]));
+        let [tabs_area, list_area, footer_area] = area.layout(&Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Fill(4),
+            Constraint::Length(1),
+        ]));
 
         self.render_tabs(tabs_area, buf);
         self.render_list(list_area, buf);
-        self.render_list_content(list_area.width, list_extra_area, buf);
+        // self.render_list_content(list_area.width, list_extra_area, buf);
         self.render_footer(footer_area, list_area.width, buf);
     }
 }
@@ -223,23 +221,6 @@ impl<'out> App<'out> {
 
         StatefulWidget::render(list, area, buf, self.current_state());
     }
-
-    fn render_list_content(&mut self, list_width: u16, area: Rect, buf: &mut Buffer) {
-        let Some(idx) = self.current_state().selected() else {
-            return;
-        };
-
-        let info = &self.current_tab_items().pairs[idx].chunk;
-
-        if info.chars().count() <= list_width as usize {
-            return;
-        }
-
-        Paragraph::new(*info)
-            .block(Block::new().title("Full text "))
-            .wrap(Wrap { trim: false })
-            .render(area, buf);
-    }
 }
 
 impl<'out> App<'out> {
@@ -250,7 +231,7 @@ impl<'out> App<'out> {
 }
 fn format_item(value: &Packed, blk_width: u16) -> String {
     assert!(blk_width > 0, "blk_width must be greater than zero");
-    let item_str = format!("{}", value.chunk.to_string());
+    let item_str = value.chunk.to_string();
 
     let mut formatted = String::with_capacity(item_str.len());
 
@@ -263,6 +244,7 @@ fn format_item(value: &Packed, blk_width: u16) -> String {
 
     formatted
 }
+#[allow(dead_code)]
 fn format_item_path_match(value: &PathMatch, blk_width: u16) -> String {
     assert!(blk_width > 0, "blk_width must be greater than zero");
 
