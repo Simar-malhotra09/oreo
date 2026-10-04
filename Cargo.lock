@@ -833,6 +833,7 @@ dependencies = [
 name = "oreo"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "color-eyre",
  "cream",
  "crossterm",

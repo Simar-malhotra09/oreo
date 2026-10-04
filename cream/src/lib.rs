@@ -143,7 +143,7 @@ pub fn extract_path_matches(input: &str) -> Vec<PathMatch> {
         let m = caps.name("path").unwrap();
         let raw = m.as_str();
         let Some(valid_len) = validate_path(raw) else {
-            println!("{} isn't valid! ", raw);
+            // println!("{} isn't valid! ", raw);
             continue;
         };
 

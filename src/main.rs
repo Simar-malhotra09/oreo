@@ -1,5 +1,8 @@
 use color_eyre::Result;
+use cream::{ChunkPathPairs, Output, Packed, PathMatch};
 use crossterm::event::{self, KeyCode, KeyEvent};
+use crossterm::execute;
+use crossterm::terminal::{EnterAlternateScreen, enable_raw_mode};
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::palette::tailwind::{BLUE, SLATE};
@@ -11,10 +14,10 @@ use ratatui::widgets::{
     Widget,
 };
 use ratatui::{DefaultTerminal, Frame};
+use std::fs::File;
 use std::io::{self, IsTerminal, Read};
-use std::process::Command;
-
-use cream::{ChunkPathPairs, Output, Packed, PathMatch};
+use std::path::PathBuf;
+use std::process::{Command, Stdio};
 
 const HEADER_STYLE: Style = Style::new().fg(SLATE.c100).bg(BLUE.c800);
 const NORMAL_ROW_BG: Color = SLATE.c950;
@@ -119,12 +122,24 @@ impl<'out> App<'out> {
             stdout: (TabKind::Stdout, output.o_stdout.pairs.len() as u32),
             stderr: (TabKind::Stderr, output.o_stderr.pairs.len() as u32),
         };
+        let list_states = [
+            output.o_stdin.pairs.len(),
+            output.o_stdout.pairs.len(),
+            output.o_stderr.pairs.len(),
+        ]
+        .map(|count| {
+            let mut state = ListState::default();
+            if count > 0 {
+                state.select_first();
+            }
+            state
+        });
         Self {
             should_exit: false,
             current_tab: start_tab,
             output,
             tab_info,
-            list_states: std::array::from_fn(|_| ListState::default()),
+            list_states,
         }
     }
 
@@ -147,7 +162,7 @@ impl<'out> App<'out> {
             terminal.draw(|frame| self.render(frame))?;
             // terminal.draw(|frame| frame.render_widget(&mut self, frame.area()))?;
             if let Some(key) = event::read()?.as_key_press_event() {
-                self.handle_key(key);
+                self.handle_key(key, terminal)?;
             }
         }
         Ok(())
@@ -157,8 +172,9 @@ impl<'out> App<'out> {
         frame.render_widget(self, frame.area());
     }
 
-    fn handle_key(&mut self, key: KeyEvent) {
+    fn handle_key(&mut self, key: KeyEvent, terminal: &mut DefaultTerminal) -> Result<()> {
         match key.code {
+            KeyCode::Enter => self.edit_file(terminal)?,
             KeyCode::Char('q') | KeyCode::Esc => self.should_exit = true,
             KeyCode::Char('h') | KeyCode::Left => self.current_tab = self.current_tab.prev(),
             KeyCode::Char('l') | KeyCode::Right => self.current_tab = self.current_tab.next(),
@@ -166,9 +182,9 @@ impl<'out> App<'out> {
             KeyCode::Char('k') | KeyCode::Up => self.current_state().select_previous(),
             KeyCode::Char('g') | KeyCode::Home => self.current_state().select_first(),
             KeyCode::Char('G') | KeyCode::End => self.current_state().select_last(),
-            KeyCode::Enter => self.edit_file(),
             _ => {}
         }
+        Ok(())
     }
 }
 
@@ -245,11 +261,44 @@ impl<'out> App<'out> {
 }
 
 impl<'out> App<'out> {
-    fn edit_file(&mut self) {
-        // TODO: open the selected match in $EDITOR
-        self.current_state().select_first();
+    fn edit_file(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
+        let Some(index) = self.current_state().selected() else {
+            return Ok(());
+        };
+
+        let Some(item) = self.current_tab_items().pairs.get(index) else {
+            return Ok(());
+        };
+
+        let path = match item.path_match.path.strip_prefix("~/") {
+            Some(rest) => {
+                let home = std::env::var_os("HOME").ok_or_else(|| {
+                    color_eyre::eyre::eyre!("HOME is not set for path {}", item.path_match.path)
+                })?;
+                PathBuf::from(home).join(rest)
+            }
+            None => PathBuf::from(&item.path_match.path),
+        };
+        let tty = File::open("/dev/tty")?;
+
+        ratatui::try_restore()?;
+        let result = Command::new("nvim")
+            .arg(&path)
+            .stdin(Stdio::from(tty))
+            .status();
+        enable_raw_mode()?;
+        execute!(io::stdout(), EnterAlternateScreen)?;
+        terminal.clear()?;
+
+        let status = result?;
+        if !status.success() {
+            return Err(color_eyre::eyre::eyre!("nvim exited with {status}"));
+        }
+
+        Ok(())
     }
 }
+
 fn format_item(value: &Packed, blk_width: u16) -> String {
     assert!(blk_width > 0, "blk_width must be greater than zero");
     let item_str = value.chunk.to_string();
