@@ -7,7 +7,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::palette::tailwind::{BLUE, SLATE};
 use ratatui::style::{Color, Modifier, Style, Stylize};
-use ratatui::symbols;
+use ratatui::symbols::{self, line};
 use ratatui::text::Line;
 use ratatui::widgets::{
     Block, Borders, HighlightSpacing, List, ListItem, ListState, Paragraph, StatefulWidget, Tabs,
@@ -282,10 +282,11 @@ impl<'out> App<'out> {
         let tty = File::open("/dev/tty")?;
 
         ratatui::try_restore()?;
-        let result = Command::new("nvim")
-            .arg(&path)
-            .stdin(Stdio::from(tty))
-            .status();
+        let mut nvim_cmd = Command::new("nvim");
+        if let Some(line_num) = item.path_match.line_num {
+            nvim_cmd.arg(format!("+{}", line_num));
+        }
+        let result = nvim_cmd.arg(&path).stdin(Stdio::from(tty)).status();
         enable_raw_mode()?;
         execute!(io::stdout(), EnterAlternateScreen)?;
         terminal.clear()?;
