@@ -1,3 +1,4 @@
+use arboard::Clipboard;
 use color_eyre::Result;
 use cream::{ChunkPathPairs, Output, Packed, PathMatch};
 use crossterm::event::{self, KeyCode, KeyEvent};
@@ -7,7 +8,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::palette::tailwind::{BLUE, SLATE};
 use ratatui::style::{Color, Modifier, Style, Stylize};
-use ratatui::symbols::{self, line};
+use ratatui::symbols::{self};
 use ratatui::text::Line;
 use ratatui::widgets::{
     Block, Borders, HighlightSpacing, List, ListItem, ListState, Paragraph, StatefulWidget, Tabs,
@@ -174,6 +175,7 @@ impl<'out> App<'out> {
 
     fn handle_key(&mut self, key: KeyEvent, terminal: &mut DefaultTerminal) -> Result<()> {
         match key.code {
+            KeyCode::Char('y') => self.yank_file_path()?,
             KeyCode::Enter => self.edit_file(terminal)?,
             KeyCode::Char('q') | KeyCode::Esc => self.should_exit = true,
             KeyCode::Char('h') | KeyCode::Left => self.current_tab = self.current_tab.prev(),
@@ -223,7 +225,7 @@ impl<'out> App<'out> {
             TabKind::Stderr => self.tab_info.stderr.1,
         };
         Paragraph::new(format!(
-            " On {curr_idx } / {total_idx} | ←/→ switch tab · ↑/↓ move · g/G top/bottom · Enter open · q quit"
+            " On {curr_idx } / {total_idx} | h/l switch tab · j/k move · g/G top/bottom · Enter open · y yank path · q quit"
         ))
         .centered()
         .render(area, buf);
@@ -262,22 +264,12 @@ impl<'out> App<'out> {
 
 impl<'out> App<'out> {
     fn edit_file(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
-        let Some(index) = self.current_state().selected() else {
+        let Some(path) = self._resolve_file_path_from_item()? else {
             return Ok(());
         };
 
-        let Some(item) = self.current_tab_items().pairs.get(index) else {
+        let Some(item) = self._resolve_item_from_selected() else {
             return Ok(());
-        };
-
-        let path = match item.path_match.path.strip_prefix("~/") {
-            Some(rest) => {
-                let home = std::env::var_os("HOME").ok_or_else(|| {
-                    color_eyre::eyre::eyre!("HOME is not set for path {}", item.path_match.path)
-                })?;
-                PathBuf::from(home).join(rest)
-            }
-            None => PathBuf::from(&item.path_match.path),
         };
         let tty = File::open("/dev/tty")?;
 
@@ -295,6 +287,17 @@ impl<'out> App<'out> {
         if !status.success() {
             return Err(color_eyre::eyre::eyre!("nvim exited with {status}"));
         }
+
+        Ok(())
+    }
+
+    fn yank_file_path(&mut self) -> color_eyre::Result<()> {
+        let Some(path) = self._resolve_file_path_from_item()? else {
+            return Ok(());
+        };
+
+        let mut clipboard = Clipboard::new()?;
+        clipboard.set_text(path.to_string_lossy().into_owned())?;
 
         Ok(())
     }
@@ -340,6 +343,31 @@ fn format_item_path_match(value: &PathMatch, blk_width: u16) -> String {
     formatted
 }
 
+impl<'out> App<'out> {
+    fn _resolve_item_from_selected(&mut self) -> Option<&Packed<'_>> {
+        let index = self.current_state().selected()?;
+        self.current_tab_items().pairs.get(index)
+    }
+
+    fn _resolve_file_path_from_item(&mut self) -> color_eyre::Result<Option<PathBuf>> {
+        let Some(item) = self._resolve_item_from_selected() else {
+            return Ok(None);
+        };
+
+        let path = match item.path_match.path.strip_prefix("~/") {
+            Some(rest) => {
+                let home = std::env::var_os("HOME").ok_or_else(|| {
+                    color_eyre::eyre::eyre!("HOME is not set for path {}", item.path_match.path)
+                })?;
+
+                PathBuf::from(home).join(rest)
+            }
+            None => PathBuf::from(&item.path_match.path),
+        };
+
+        Ok(Some(path))
+    }
+}
 const fn alternate_colors(i: usize) -> Color {
     if i.is_multiple_of(2) {
         NORMAL_ROW_BG
