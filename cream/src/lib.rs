@@ -9,7 +9,7 @@ use std::sync::LazyLock;
 #[derive(Default)]
 pub struct Packed<'out> {
     pub chunk: &'out str,
-    pub path_match: PathMatch,
+    pub path_matches: Vec<PathMatch>,
 }
 
 #[derive(Default)]
@@ -19,11 +19,7 @@ pub struct ChunkPathPairs<'out> {
 
 impl<'out> ChunkPathPairs<'out> {
     pub fn new(content: &'out str) -> Self {
-        let items = content // items expected to be Vec<Packed>
-            .split('\n')
-            .flat_map(Packed::new) //inner returns Vec<Packed>, so I have //Vec<Vec<Packed>>
-            // essentially, i has lifeitme of content, every other ref used should have the same
-            .collect();
+        let items = content.split("\n").map(Packed::new).collect();
         Self { pairs: items }
     }
     // pub fn new_single_chunk(mut content: String) -> Self {
@@ -43,9 +39,15 @@ impl<'out> ChunkPathPairs<'out> {
 
 impl<'out> Display for ChunkPathPairs<'out> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        for Packed { chunk, path_match } in &self.pairs {
-            writeln!(f, "chunk: {}", chunk)?;
-            writeln!(f, "matches: {:?}", path_match)?;
+        let n = &self.pairs.len();
+        writeln!(f, "Total chunks:{n}");
+        for Packed {
+            chunk,
+            path_matches,
+        } in &self.pairs
+        {
+            writeln!(f, "chunk: {}\n", chunk)?;
+            writeln!(f, "matches: {:?}\n", path_matches)?;
             writeln!(f, "{}", "-".repeat(10))?;
         }
 
@@ -54,16 +56,16 @@ impl<'out> Display for ChunkPathPairs<'out> {
 }
 
 impl<'out> Packed<'out> {
-    pub fn new(content: &'out str) -> Vec<Self> {
+    pub fn new(content: &'out str) -> Self {
         let matches = extract_path_matches(content);
-        let mut res = Vec::<Packed>::new();
+        let mut path_matches = Vec::<PathMatch>::new();
         for path_match in matches {
-            res.push(Self {
-                chunk: content,
-                path_match,
-            })
+            path_matches.push(path_match);
         }
-        res
+        Self {
+            chunk: content,
+            path_matches,
+        }
     }
     pub fn does_content_have_newlines(content: &str) -> bool {
         content.contains('\n')
@@ -87,7 +89,7 @@ pub struct PathMatch {
 }
 impl fmt::Display for PathMatch {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
+        writeln!(
             f,
             "{}:{}:{}",
             self.path,
