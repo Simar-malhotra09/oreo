@@ -56,7 +56,7 @@ fn main() -> Result<()> {
     }
 
     let output = Output {
-        o_stdin: ChunkPathPairs::new(&i_stdin),
+        o_stdin: ChunkPathPairs::new(&i_stdin), // Vec<chunk, Vec<path_match>>
         o_stdout: ChunkPathPairs::new(&i_stdout),
         o_stderr: ChunkPathPairs::new(&i_stderr),
     };
@@ -176,7 +176,7 @@ impl<'out> App<'out> {
     fn handle_key(&mut self, key: KeyEvent, terminal: &mut DefaultTerminal) -> Result<()> {
         match key.code {
             KeyCode::Char('y') => self.yank_file_path()?,
-            KeyCode::Enter => self.edit_file(terminal)?,
+            // KeyCode::Enter => self.edit_file(terminal)?,
             KeyCode::Char('q') | KeyCode::Esc => self.should_exit = true,
             KeyCode::Char('h') | KeyCode::Left => self.current_tab = self.current_tab.prev(),
             KeyCode::Char('l') | KeyCode::Right => self.current_tab = self.current_tab.next(),
@@ -263,41 +263,39 @@ impl<'out> App<'out> {
 }
 
 impl<'out> App<'out> {
-    fn edit_file(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
-        let Some(path) = self._resolve_file_path_from_item()? else {
-            return Ok(());
-        };
+    fn edit_file(&mut self, terminal: &mut DefaultTerminal, path: &PathBuf) -> Result<()> {
+        // let paths = self._resolve_file_path_from_item()?;
 
-        let Some(item) = self._resolve_item_from_selected() else {
-            return Ok(());
-        };
-        let tty = File::open("/dev/tty")?;
-
-        ratatui::try_restore()?;
-        let mut nvim_cmd = Command::new("nvim");
-        if let Some(line_num) = item.path_match.line_num {
-            nvim_cmd.arg(format!("+{}", line_num));
-        }
-        let result = nvim_cmd.arg(&path).stdin(Stdio::from(tty)).status();
-        enable_raw_mode()?;
-        execute!(io::stdout(), EnterAlternateScreen)?;
-        terminal.clear()?;
-
-        let status = result?;
-        if !status.success() {
-            return Err(color_eyre::eyre::eyre!("nvim exited with {status}"));
-        }
+        // let Some(item) = self._resolve_item_from_selected() else {
+        //     return Ok(());
+        // };
+        // let tty = File::open("/dev/tty")?;
+        //
+        // ratatui::try_restore()?;
+        // let mut nvim_cmd = Command::new("nvim");
+        // if let Some(line_num) = item.path_matches.get(path)?.line_num {
+        //     nvim_cmd.arg(format!("+{}", line_num));
+        // }
+        // let result = nvim_cmd.arg(&path).stdin(Stdio::from(tty)).status();
+        // enable_raw_mode()?;
+        // execute!(io::stdout(), EnterAlternateScreen)?;
+        // terminal.clear()?;
+        //
+        // let status = result?;
+        // if !status.success() {
+        //     return Err(color_eyre::eyre::eyre!("nvim exited with {status}"));
+        // }
 
         Ok(())
     }
 
     fn yank_file_path(&mut self) -> color_eyre::Result<()> {
-        let Some(path) = self._resolve_file_path_from_item()? else {
-            return Ok(());
-        };
-
-        let mut clipboard = Clipboard::new()?;
-        clipboard.set_text(path.to_string_lossy().into_owned())?;
+        // let Some(path) = self._resolve_file_path_from_item()? else {
+        //     return Ok(());
+        // };
+        //
+        // let mut clipboard = Clipboard::new()?;
+        // clipboard.set_text(path.to_string_lossy().into_owned())?;
 
         Ok(())
     }
@@ -349,23 +347,27 @@ impl<'out> App<'out> {
         self.current_tab_items().pairs.get(index)
     }
 
-    fn _resolve_file_path_from_item(&mut self) -> color_eyre::Result<Option<PathBuf>> {
+    fn _resolve_file_path_from_item(&mut self) -> color_eyre::Result<Vec<PathBuf>> {
+        let mut paths = Vec::new();
         let Some(item) = self._resolve_item_from_selected() else {
-            return Ok(None);
+            return Ok(paths);
         };
 
-        let path = match item.path_match.path.strip_prefix("~/") {
-            Some(rest) => {
-                let home = std::env::var_os("HOME").ok_or_else(|| {
-                    color_eyre::eyre::eyre!("HOME is not set for path {}", item.path_match.path)
-                })?;
+        for pm in &item.path_matches {
+            let path = match pm.path.strip_prefix("~/") {
+                Some(rest) => {
+                    let home = std::env::var_os("HOME").ok_or_else(|| {
+                        color_eyre::eyre::eyre!("HOME is not set for path {}", pm.path)
+                    })?;
 
-                PathBuf::from(home).join(rest)
-            }
-            None => PathBuf::from(&item.path_match.path),
-        };
+                    PathBuf::from(home).join(rest)
+                }
+                None => PathBuf::from(&pm.path),
+            };
+            paths.push(path);
+        }
 
-        Ok(Some(path))
+        Ok(paths)
     }
 }
 const fn alternate_colors(i: usize) -> Color {
