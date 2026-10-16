@@ -9,7 +9,7 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::palette::tailwind::{BLUE, SLATE};
 use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::symbols::{self};
-use ratatui::text::Line;
+use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{
     Block, Borders, HighlightSpacing, List, ListItem, ListState, Paragraph, StatefulWidget, Tabs,
     Widget,
@@ -72,10 +72,16 @@ fn main() -> Result<()> {
 struct App<'out> {
     should_exit: bool,
     current_tab: TabKind,
-    tab_info: TabInfo,
+    tab_packed: TabPacked,
     output: Output<'out>,
     // One ListState per tab so each tab keeps its own selection.
     list_states: [ListState; 3],
+    // Current path 'selected' in a row, in a tab.
+    // What we need to keep in mind is:
+    // - reset to 0 when user moves up/down one row
+    // - reset both selected row and selected path to 0 when
+    // user moves to a diff tab
+    current_path_idx: [usize; 3],
 }
 
 #[derive(Clone, Copy)]
@@ -86,8 +92,8 @@ enum TabKind {
 }
 
 #[derive(Clone, Copy)]
-struct TabInfo {
-    stdin: (TabKind, u32),
+struct TabPacked {
+    stdin: (TabKind, u32), // kind, len(items)
     stdout: (TabKind, u32),
     stderr: (TabKind, u32),
 }
@@ -118,7 +124,7 @@ impl TabKind {
 
 impl<'out> App<'out> {
     fn new(output: Output<'out>, start_tab: TabKind) -> Self {
-        let tab_info = TabInfo {
+        let tab_packed = TabPacked {
             stdin: (TabKind::Stdin, output.o_stdin.pairs.len() as u32),
             stdout: (TabKind::Stdout, output.o_stdout.pairs.len() as u32),
             stderr: (TabKind::Stderr, output.o_stderr.pairs.len() as u32),
@@ -135,12 +141,15 @@ impl<'out> App<'out> {
             }
             state
         });
+
+        let current_path_idx = [0; 3];
         Self {
             should_exit: false,
             current_tab: start_tab,
             output,
-            tab_info,
+            tab_packed,
             list_states,
+            current_path_idx,
         }
     }
 
@@ -152,8 +161,78 @@ impl<'out> App<'out> {
         }
     }
 
-    fn current_state(&mut self) -> &mut ListState {
+    fn current_state(&self) -> &ListState {
+        &self.list_states[self.current_tab.index()]
+    }
+
+    fn current_state_mut(&mut self) -> &mut ListState {
         &mut self.list_states[self.current_tab.index()]
+    }
+
+    fn get_current_item(&self) -> Option<&Packed<'_>> {
+        let index = self.current_state().selected()?;
+        self.current_tab_items().pairs.get(index)
+    }
+
+    fn get_current_item_idx(&self) -> Option<usize> {
+        self.current_state().selected()
+    }
+
+    fn reset_current_path(&mut self) {
+        let Some(item) = self.get_current_item() else {
+            return;
+        };
+
+        let index = match self.current_tab {
+            TabKind::Stdin => 0,
+            TabKind::Stdout => 1,
+            TabKind::Stderr => 2,
+        };
+
+        // probably don't need count here
+        let count = item.path_matches.len();
+
+        if count > 0 {
+            self.current_path_idx[index] = 0;
+        }
+    }
+
+    fn next_path(&mut self) {
+        let Some(item) = self.get_current_item() else {
+            return;
+        };
+
+        let index = match self.current_tab {
+            TabKind::Stdin => 0,
+            TabKind::Stdout => 1,
+            TabKind::Stderr => 2,
+        };
+
+        let count = item.path_matches.len();
+
+        if count > 0 {
+            self.current_path_idx[index] = (self.current_path_idx[index] + 1) % count;
+        }
+    }
+
+    fn prev_path(&mut self) {
+        let Some(item) = self.get_current_item() else {
+            return;
+        };
+
+        let index = match self.current_tab {
+            TabKind::Stdin => 0,
+            TabKind::Stdout => 1,
+            TabKind::Stderr => 2,
+        };
+
+        let count = item.path_matches.len();
+
+        if count > 0 {
+            self.current_path_idx[index] = self.current_path_idx[index]
+                .checked_sub(1)
+                .unwrap_or(count - 1);
+        }
     }
 }
 
@@ -176,14 +255,36 @@ impl<'out> App<'out> {
     fn handle_key(&mut self, key: KeyEvent, terminal: &mut DefaultTerminal) -> Result<()> {
         match key.code {
             KeyCode::Char('y') => self.yank_file_path()?,
-            // KeyCode::Enter => self.edit_file(terminal)?,
+            KeyCode::Enter => self.edit_file(terminal)?,
+            KeyCode::Tab => self.next_path(),
+            KeyCode::BackTab => self.prev_path(),
             KeyCode::Char('q') | KeyCode::Esc => self.should_exit = true,
-            KeyCode::Char('h') | KeyCode::Left => self.current_tab = self.current_tab.prev(),
-            KeyCode::Char('l') | KeyCode::Right => self.current_tab = self.current_tab.next(),
-            KeyCode::Char('j') | KeyCode::Down => self.current_state().select_next(),
-            KeyCode::Char('k') | KeyCode::Up => self.current_state().select_previous(),
-            KeyCode::Char('g') | KeyCode::Home => self.current_state().select_first(),
-            KeyCode::Char('G') | KeyCode::End => self.current_state().select_last(),
+            KeyCode::Char('h') | KeyCode::Left => {
+                self.current_tab = self.current_tab.prev();
+                self.reset_current_path();
+            }
+            KeyCode::Char('l') | KeyCode::Right => {
+                self.current_tab = self.current_tab.next();
+                self.reset_current_path();
+            }
+            KeyCode::Char('j') | KeyCode::Down => {
+                self.current_state_mut().select_next();
+                self.reset_current_path();
+            }
+
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.current_state_mut().select_previous();
+                self.reset_current_path();
+            }
+            KeyCode::Char('g') | KeyCode::Home => {
+                self.current_state_mut().select_first();
+                self.reset_current_path();
+            }
+            KeyCode::Char('G') | KeyCode::End => {
+                self.current_state_mut().select_last();
+                self.reset_current_path();
+            }
+
             _ => {}
         }
         Ok(())
@@ -201,7 +302,7 @@ impl<'out> Widget for &mut App<'out> {
         self.render_tabs(tabs_area, buf);
         self.render_list(list_area, buf);
         // self.render_list_content(list_area.width, list_extra_area, buf);
-        self.render_footer(footer_area, list_area.width, buf);
+        let _ = self.render_footer(footer_area, list_area.width, buf);
     }
 }
 
@@ -216,19 +317,57 @@ impl<'out> App<'out> {
             .render(area, buf);
     }
 
-    fn render_footer(&mut self, area: Rect, _list_width: u16, buf: &mut Buffer) {
+    fn render_footer(&mut self, area: Rect, _list_width: u16, buf: &mut Buffer) -> Result<()> {
         // the following is pretty ugly beaware future me!
-        let curr_idx = self.current_state().selected().unwrap_or(0) as u32 + 1;
+        let curr_idx = self.get_current_item_idx().unwrap_or(0) as u32 + 1;
         let total_idx = match self.current_tab {
-            TabKind::Stdin => self.tab_info.stdin.1,
-            TabKind::Stdout => self.tab_info.stdout.1,
-            TabKind::Stderr => self.tab_info.stderr.1,
+            TabKind::Stdin => self.tab_packed.stdin.1,
+            TabKind::Stdout => self.tab_packed.stdout.1,
+            TabKind::Stderr => self.tab_packed.stderr.1,
         };
+
+        let Some(item) = self.get_current_item() else {
+            return Ok(());
+        };
+        // Paragraph::new(format!(
+        //     " On {curr_idx } / {total_idx} | h/l switch tab · j/k move · g/G top/bottom · Enter open · y yank path · q quit"
+        // ))
+        // .centered()
+        // .render(area, buf);
+        //
+        let total_paths = item.path_matches.len();
+
+        let index = match self.current_tab {
+            TabKind::Stdin => 0,
+            TabKind::Stdout => 1,
+            TabKind::Stderr => 2,
+        };
+        let curr_path = item
+            .path_matches
+            .get(self.current_path_idx[index])
+            .map(|p| p.path.as_str())
+            .unwrap_or("No path");
         Paragraph::new(format!(
-            " On {curr_idx } / {total_idx} | h/l switch tab · j/k move · g/G top/bottom · Enter open · y yank path · q quit"
+            " On {curr_idx } / {total_idx} | Total paths:{} | Current path: {}",
+            total_paths, curr_path,
         ))
         .centered()
         .render(area, buf);
+        // let mut nvim_cmd = Command::new("nvim");
+        //
+        // let path_idx = self.current_path_idx[self.current_tab.index()];
+        // let Some(pm) = item.path_matches.get(path_idx) else {
+        //     return Ok(());
+        // };
+        // if let Some(line_num) = pm.line_num {
+        //     nvim_cmd.arg(format!("+{}", line_num));
+        // }
+        // nvim_cmd.arg(&pm.path);
+        // Paragraph::new(format!(" On {curr_idx } / {total_idx} | {:?}", nvim_cmd))
+        //     .centered()
+        //     .render(area, buf);
+
+        Ok(())
     }
 
     fn render_list(&mut self, area: Rect, buf: &mut Buffer) {
@@ -246,7 +385,7 @@ impl<'out> App<'out> {
             .iter()
             .enumerate()
             .map(|(idx, packed)| {
-                ListItem::new(format_item(packed, area.width))
+                ListItem::new(self.format_item(packed, area.width))
                     .fg(SLATE.c200)
                     .bg(alternate_colors(idx))
             })
@@ -258,33 +397,37 @@ impl<'out> App<'out> {
             .highlight_symbol(">")
             .highlight_spacing(HighlightSpacing::Always);
 
-        StatefulWidget::render(list, area, buf, self.current_state());
+        StatefulWidget::render(list, area, buf, self.current_state_mut());
     }
 }
 
 impl<'out> App<'out> {
-    fn edit_file(&mut self, terminal: &mut DefaultTerminal, path: &PathBuf) -> Result<()> {
-        // let paths = self._resolve_file_path_from_item()?;
+    fn edit_file(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
+        let Some(item) = self.get_current_item() else {
+            return Ok(());
+        };
+        let mut nvim_cmd = Command::new("nvim");
 
-        // let Some(item) = self._resolve_item_from_selected() else {
-        //     return Ok(());
-        // };
-        // let tty = File::open("/dev/tty")?;
-        //
-        // ratatui::try_restore()?;
-        // let mut nvim_cmd = Command::new("nvim");
-        // if let Some(line_num) = item.path_matches.get(path)?.line_num {
-        //     nvim_cmd.arg(format!("+{}", line_num));
-        // }
-        // let result = nvim_cmd.arg(&path).stdin(Stdio::from(tty)).status();
-        // enable_raw_mode()?;
-        // execute!(io::stdout(), EnterAlternateScreen)?;
-        // terminal.clear()?;
-        //
-        // let status = result?;
-        // if !status.success() {
-        //     return Err(color_eyre::eyre::eyre!("nvim exited with {status}"));
-        // }
+        let path_idx = self.current_path_idx[self.current_tab.index()];
+        let Some(pm) = item.path_matches.get(path_idx) else {
+            return Ok(());
+        };
+        if let Some(line_num) = pm.line_num {
+            nvim_cmd.arg(format!("+{}", line_num));
+        }
+        let tty = File::open("/dev/tty")?;
+
+        ratatui::try_restore()?;
+
+        let result = nvim_cmd.arg(&pm.path).stdin(Stdio::from(tty)).status();
+        enable_raw_mode()?;
+        execute!(io::stdout(), EnterAlternateScreen)?;
+        terminal.clear()?;
+
+        let status = result?;
+        if !status.success() {
+            return Err(color_eyre::eyre::eyre!("nvim exited with {status}"));
+        }
 
         Ok(())
     }
@@ -301,73 +444,45 @@ impl<'out> App<'out> {
     }
 }
 
-fn format_item(value: &Packed, blk_width: u16) -> String {
-    assert!(blk_width > 0, "blk_width must be greater than zero");
-    let item_str = value.chunk.to_string();
+impl App<'_> {
+    fn format_item(&self, item: &Packed, blk_width: u16) -> Text<'static> {
+        assert!(blk_width > 0);
 
-    let mut formatted = String::with_capacity(item_str.len());
+        let index = self.current_tab.index();
+        let selected_idx = self.current_path_idx[index];
 
-    for (i, ch) in item_str.chars().enumerate() {
-        if i > 0 && i % blk_width as usize == 0 {
-            formatted.push('\n');
-        }
-        formatted.push(ch);
-    }
+        let mut lines = Vec::new();
+        let mut spans = Vec::new();
 
-    formatted
-}
-#[allow(dead_code)]
-fn format_item_path_match(value: &PathMatch, blk_width: u16) -> String {
-    assert!(blk_width > 0, "blk_width must be greater than zero");
+        for (i, (byte_idx, ch)) in item.chunk.char_indices().enumerate() {
+            // Preserve wrapping
+            if i > 0 && i % blk_width as usize == 0 {
+                lines.push(Line::from(std::mem::take(&mut spans)));
+            }
 
-    let empty_or_not_here_i_come = |n: Option<u32>| n.map_or(" ".to_string(), |n| format!(": {n}"));
-
-    let item_str = format!(
-        "idx: {}{}{}",
-        value.path,
-        empty_or_not_here_i_come(value.line_num),
-        empty_or_not_here_i_come(value.col_num),
-    );
-
-    let mut formatted = String::with_capacity(item_str.len());
-
-    for (i, ch) in item_str.chars().enumerate() {
-        if i > 0 && i % blk_width as usize == 0 {
-            formatted.push('\n');
-        }
-        formatted.push(ch);
-    }
-
-    formatted
-}
-
-impl<'out> App<'out> {
-    fn _resolve_item_from_selected(&mut self) -> Option<&Packed<'_>> {
-        let index = self.current_state().selected()?;
-        self.current_tab_items().pairs.get(index)
-    }
-
-    fn _resolve_file_path_from_item(&mut self) -> color_eyre::Result<Vec<PathBuf>> {
-        let mut paths = Vec::new();
-        let Some(item) = self._resolve_item_from_selected() else {
-            return Ok(paths);
-        };
-
-        for pm in &item.path_matches {
-            let path = match pm.path.strip_prefix("~/") {
-                Some(rest) => {
-                    let home = std::env::var_os("HOME").ok_or_else(|| {
-                        color_eyre::eyre::eyre!("HOME is not set for path {}", pm.path)
-                    })?;
-
-                    PathBuf::from(home).join(rest)
-                }
-                None => PathBuf::from(&pm.path),
+            // Selected path takes priority over other matches
+            let style = if item
+                .path_matches
+                .get(selected_idx)
+                .is_some_and(|p| byte_idx >= p.start && byte_idx < p.end)
+            {
+                Style::default().fg(Color::Red)
+            } else if item
+                .path_matches
+                .iter()
+                .any(|p| byte_idx >= p.start && byte_idx < p.end)
+            {
+                Style::default().fg(Color::Yellow)
+            } else {
+                Style::default()
             };
-            paths.push(path);
+
+            spans.push(Span::styled(ch.to_string(), style));
         }
 
-        Ok(paths)
+        lines.push(Line::from(spans));
+
+        Text::from(lines)
     }
 }
 const fn alternate_colors(i: usize) -> Color {
