@@ -1,6 +1,6 @@
 use arboard::Clipboard;
 use color_eyre::Result;
-use cream::{ChunkPathPairs, Output, Packed, PathMatch};
+use cream::{ChunkPathPairs, Output, Packed};
 use crossterm::event::{self, KeyCode, KeyEvent};
 use crossterm::execute;
 use crossterm::terminal::{EnterAlternateScreen, enable_raw_mode};
@@ -17,7 +17,6 @@ use ratatui::widgets::{
 use ratatui::{DefaultTerminal, Frame};
 use std::fs::File;
 use std::io::{self, IsTerminal, Read};
-use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 const HEADER_STYLE: Style = Style::new().fg(SLATE.c100).bg(BLUE.c800);
@@ -433,12 +432,17 @@ impl<'out> App<'out> {
     }
 
     fn yank_file_path(&mut self) -> color_eyre::Result<()> {
-        // let Some(path) = self._resolve_file_path_from_item()? else {
-        //     return Ok(());
-        // };
-        //
-        // let mut clipboard = Clipboard::new()?;
-        // clipboard.set_text(path.to_string_lossy().into_owned())?;
+        let Some(item) = self.get_current_item() else {
+            return Ok(());
+        };
+
+        let path_idx = self.current_path_idx[self.current_tab.index()];
+        let Some(pm) = item.path_matches.get(path_idx) else {
+            return Ok(());
+        };
+
+        let mut clipboard = Clipboard::new()?;
+        clipboard.set_text(pm.path.to_string().to_owned())?;
 
         Ok(())
     }
