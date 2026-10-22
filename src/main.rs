@@ -383,8 +383,8 @@ impl<'out> App<'out> {
             .pairs
             .iter()
             .enumerate()
-            .map(|(idx, packed)| {
-                ListItem::new(self.format_item(packed, area.width))
+            .map(|(idx, item)| {
+                ListItem::new(self.format_item(item, idx, area.width))
                     .fg(SLATE.c200)
                     .bg(alternate_colors(idx))
             })
@@ -449,11 +449,12 @@ impl<'out> App<'out> {
 }
 
 impl App<'_> {
-    fn format_item(&self, item: &Packed, blk_width: u16) -> Text<'static> {
+    fn format_item(&self, item: &Packed, item_idx: usize, blk_width: u16) -> Text<'static> {
         assert!(blk_width > 0);
 
-        let index = self.current_tab.index();
-        let selected_idx = self.current_path_idx[index];
+        let tab_index = self.current_tab.index();
+        let is_active_row = self.get_current_item_idx() == Some(item_idx);
+        let selected_path_idx = self.current_path_idx[tab_index];
 
         let mut lines = Vec::new();
         let mut spans = Vec::new();
@@ -464,18 +465,22 @@ impl App<'_> {
                 lines.push(Line::from(std::mem::take(&mut spans)));
             }
 
-            // Selected path takes priority over other matches
-            let style = if item
-                .path_matches
-                .get(selected_idx)
-                .is_some_and(|p| byte_idx >= p.start && byte_idx < p.end)
-            {
-                Style::default().fg(Color::Red)
-            } else if item
+            // Check whether character belongs to any path
+            let is_path = item
                 .path_matches
                 .iter()
-                .any(|p| byte_idx >= p.start && byte_idx < p.end)
-            {
+                .any(|p| byte_idx >= p.start && byte_idx < p.end);
+
+            // Highlight selected path only in active row
+            let is_selected_path = is_active_row
+                && item
+                    .path_matches
+                    .get(selected_path_idx)
+                    .is_some_and(|p| byte_idx >= p.start && byte_idx < p.end);
+
+            let style = if is_selected_path {
+                Style::default().fg(Color::Red)
+            } else if is_path {
                 Style::default().fg(Color::Yellow)
             } else {
                 Style::default()
