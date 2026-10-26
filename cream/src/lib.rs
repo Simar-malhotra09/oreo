@@ -22,13 +22,6 @@ impl<'out> ChunkPathPairs<'out> {
         let items = content.split("\n").map(Packed::new).collect();
         Self { pairs: items }
     }
-    // pub fn new_single_chunk(mut content: String) -> Self {
-    //     let items = ChunkPathPairs::strip_newlines(&mut content)
-    //         .split('\n')
-    //         .flat_map(|i| Packed::new(i))
-    //         .collect();
-    //     Self { pairs: items }
-    // }
 
     #[allow(dead_code)]
     fn strip_newlines(content: &mut String) -> &String {
@@ -40,7 +33,7 @@ impl<'out> ChunkPathPairs<'out> {
 impl<'out> Display for ChunkPathPairs<'out> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let n = &self.pairs.len();
-        writeln!(f, "Total chunks:{n}");
+        let _ = writeln!(f, "Total chunks:{n}");
         for Packed {
             chunk,
             path_matches,
