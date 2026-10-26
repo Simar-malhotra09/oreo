@@ -1,3 +1,56 @@
+# Oreo
+
+Oreo is a terminal file opener for command output. It finds file paths in stdin, stdout, and stderr, then lets you jump from a matching line straight into the file.
+
+<p align="center">
+  <img src="assets/demo.gif" alt="Oreo browsing compiler errors and opening the selected source file" width="100%">
+</p>
+
+## What it does
+
+- Run a command inside Oreo or pipe text into it.
+- Browse captured stdin, stdout, and stderr in separate tabs.
+- Move through matching lines and switch between multiple paths on one line.
+- Open the selected file in Neovim at its reported line, or copy its path.
+- Add useful path and line-number flags automatically for `rg` and `grep`.
+
+## Install
+
+Requires Rust and Cargo. Install the binary from a clone of this repository:
+
+```sh
+cargo install --path .
+```
+
+## Use
+
+Run a command and browse its output:
+
+```sh
+oreo cargo check
+oreo rg -n "TODO" src/
+```
+
+Or pipe existing output into Oreo:
+
+```sh
+rg -n "TODO" src/ | oreo
+```
+
+Oreo opens the selected file with `nvim`. Use the controls below to navigate:
+
+| Key | Action |
+| --- | --- |
+| `j` / `k` or arrows | Move through matches |
+| `g` / `G` | Jump to the first / last match |
+| `h` / `l` or arrows | Switch between stdin, stdout, and stderr |
+| `Tab` / `Shift+Tab` | Select the next / previous path on the current line |
+| `Enter` | Open the selected file in Neovim |
+| `y` | Copy the selected path |
+| `q` / `Esc` | Quit |
+
+---
+
 Okay, finally some clarity.
 
 The goal is to capture some 'text', from stdin, stdout, and stderr, parse it for valid filepaths,
