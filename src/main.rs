@@ -15,6 +15,7 @@ use ratatui::widgets::{
     Widget,
 };
 use ratatui::{DefaultTerminal, Frame};
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, IsTerminal, Read};
 use std::process::{Command, Stdio};
@@ -25,6 +26,11 @@ const ALT_ROW_BG_COLOR: Color = SLATE.c900;
 const SELECTED_STYLE: Style = Style::new().bg(SLATE.c800).add_modifier(Modifier::BOLD);
 
 fn main() -> Result<()> {
+    let flag_presets: HashMap<&str, &[&str]> = HashMap::from([
+        ("rg", &["-nH", "--no-heading"] as &[&str]),
+        ("grep", &["-nI"]),
+    ]);
+
     color_eyre::install()?;
 
     let mut i_stdin = String::new();
@@ -41,7 +47,16 @@ fn main() -> Result<()> {
             std::process::exit(2);
         };
 
-        let output = match Command::new(command).args(command_args).output() {
+        let flags = flag_presets
+            .get(command.as_str()) // Option<&&[&str]>
+            .copied() // Option<&[&str]>
+            .unwrap_or(&[]); // &[&str]
+
+        let output = match Command::new(command)
+            .args(flags)
+            .args(command_args)
+            .output()
+        {
             Ok(output) => output,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 eprintln!("oreo: command not found: {command}");
