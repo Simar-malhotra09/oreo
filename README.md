@@ -1,6 +1,10 @@
 # Oreo
 
-Oreo is a terminal file opener for command output. It finds file paths in stdin, stdout, and stderr, then lets you jump from a matching line straight into the file.
+Oreo is like Emac's compile mode(?) 
+Basically, all paths in your stdout/stderr become interact able and you can open the file (to row, col number if supplied in output) with nvim, make changes, and come back. 
+This earlier was a tool that was intended for grep/rg. When it splits our file path I found it really annoying to copy-paste again and again. 
+When I saw Emac's compile mode I found it to be pretty cool but learning Emac's commands were too hard for me. 
+This is a standalone binary. WIP 
 
 <p align="center">
   <img src="assets/demo.gif" alt="Oreo browsing compiler errors and opening the selected source file" width="100%">
